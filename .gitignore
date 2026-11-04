@@ -1,12 +1,21 @@
+# Python virtual environment
+venv/
+backend/venv/
+**/venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
 .env
 .env.local
 **/.env
 **/.env.local
-venv/
-**/venv/
+
+# Node modules
 node_modules/
-__pycache__/
-**/__pycache__/
-*.pyc
-.vercel/
-**/.vercel/
+
+# ChromaDB
+backend/chroma_db/
+chroma_db/

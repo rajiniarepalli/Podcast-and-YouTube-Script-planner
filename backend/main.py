@@ -1,14 +1,19 @@
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.config import settings
 from app.routes.scripts import router as scripts_router
+from app.routes.documents import router as documents_router
+
 
 app = FastAPI(
     title="AI-Powered Podcast & YouTube Script Planner API",
     version="1.0.0"
 )
 
-# Proper CORS configuration for local React
+
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -24,18 +29,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(scripts_router)
 
+# Register API routers
+app.include_router(scripts_router)
+app.include_router(documents_router)
+
+
+# Health check API
 @app.get("/api/health", tags=["Health"])
 def health_check():
     return {
         "status": "healthy",
         "service": "AI Script Planner API",
         "model": settings.GEMINI_MODEL,
-        "has_api_key": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_actual_gemini_api_key_here")
+        "has_api_key": bool(
+            settings.GEMINI_API_KEY
+            and settings.GEMINI_API_KEY != "your_actual_gemini_api_key_here"
+        )
     }
 
+
+# Run FastAPI server
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
-    
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False
+    )

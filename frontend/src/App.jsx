@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import PlannerPage from './pages/PlannerPage';
 import SavedScripts from './components/SavedScripts';
+import DocumentPage from './pages/DocumentPage';
 import { storageService } from './services/storage';
 
 export default function App() {
@@ -34,8 +36,12 @@ export default function App() {
   return (
     <div>
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+
       <main>
-        {activeTab === 'home' && <HomePage onStartClick={() => setActiveTab('planner')} />}
+        {activeTab === 'home' && (
+          <HomePage onStartClick={() => setActiveTab('planner')} />
+        )}
+
         {activeTab === 'planner' && (
           <PlannerPage
             currentScript={currentScript}
@@ -43,6 +49,7 @@ export default function App() {
             onSaveScript={handleSaveCurrentScript}
           />
         )}
+
         {activeTab === 'saved' && (
           <div className="container">
             <SavedScripts
@@ -52,6 +59,8 @@ export default function App() {
             />
           </div>
         )}
+
+        {activeTab === 'documents' && <DocumentPage />}
       </main>
     </div>
   );

@@ -1,54 +1,114 @@
-from fastapi import APIRouter, HTTPException, status
-from app.schemas import (
-    ScriptGenerationRequest,
-    ScriptGenerationResponse,
-    ScriptRefinementRequest,
-    ScriptRefinementResponse
+
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel
+from app.services.rag_service import (
+    store_document,
+    retrieve_relevant_documents
 )
 from app.services.gemini_service import gemini_service
-from app.services.prompt_templates import (
-    build_youtube_prompt,
-    build_podcast_prompt,
-    build_refinement_prompt
+import tempfile
+from pathlib import Path
+
+router = APIRouter(
+    prefix="/api/documents",
+    tags=["Documents"]
 )
-from app.config import settings
 
-router = APIRouter(prefix="/api", tags=["Scripts"])
 
-@router.post("/generate-script", response_model=ScriptGenerationResponse)
-async def generate_script(req: ScriptGenerationRequest):
-    content_type_str = str(req.content_type).lower()
-    
-    if "youtube" in content_type_str:
-        prompt = build_youtube_prompt(req)
-        default_title = f"YouTube: {req.topic}"
-    else:
-        prompt = build_podcast_prompt(req)
-        default_title = f"Podcast: {req.topic}"
+class QuestionRequest(BaseModel):
+    question: str
 
-    generated_text = await gemini_service.generate_text(prompt)
 
-    return ScriptGenerationResponse(
-        title=default_title,
-        script=generated_text,
-        content_type=req.content_type,
-        estimated_duration=req.duration or "5-7 minutes",
-        model_used=settings.GEMINI_MODEL
-    )
+# PDF Upload API
+@router.post("/upload")
+async def upload_pdf(file: UploadFile = File(...)):
 
-@router.post("/refine-script", response_model=ScriptRefinementResponse)
-async def refine_script(req: ScriptRefinementRequest):
-    if req.action == "custom" and not req.custom_instruction:
+    if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A custom instruction is required when 'custom' refinement action is chosen."
+            status_code=400,
+            detail="Please upload a PDF file"
         )
 
-    prompt = build_refinement_prompt(req)
-    refined_text = await gemini_service.generate_text(prompt)
+    content = await file.read()
 
-    return ScriptRefinementResponse(
-        refined_script=refined_text,
-        action_applied=req.action
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded PDF is empty"
+        )
+
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".pdf"
+        ) as temp:
+            temp.write(content)
+            temp_path = temp.name
+
+        chunks = store_document(temp_path)
+
+        return {
+            "message": "PDF uploaded successfully",
+            "filename": file.filename,
+            "chunks_stored": chunks
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    finally:
+        if temp_path:
+            Path(temp_path).unlink(missing_ok=True)
+
+
+# RAG Question API with Gemini
+@router.post("/ask")
+async def ask_question(request: QuestionRequest):
+
+    if not request.question.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Question cannot be empty"
+        )
+
+    documents = retrieve_relevant_documents(
+        request.question
     )
-    
+
+    if not documents:
+        raise HTTPException(
+            status_code=404,
+            detail="No documents found. Please upload a PDF first."
+        )
+
+    context = "\n\n".join(documents)
+
+    prompt = f"""
+    You are a helpful assistant for a Podcast and YouTube Script Planner.
+
+    Answer the user's question using only the context provided below.
+
+    If the answer is not available in the context, clearly say
+    that the uploaded document does not contain that information.
+
+    Context:
+    {context}
+
+    User Question:
+    {request.question}
+
+    Provide a clear and simple answer.
+    """
+
+    answer = await gemini_service.generate_text(prompt)
+
+    return {
+        "question": request.question,
+        "answer": answer,
+        "retrieved_context": documents
+    }
