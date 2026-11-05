@@ -1,114 +1,141 @@
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.services.rag_service import (
-    store_document,
-    retrieve_relevant_documents
-)
 from app.services.gemini_service import gemini_service
-import tempfile
-from pathlib import Path
 
 router = APIRouter(
-    prefix="/api/documents",
-    tags=["Documents"]
+    prefix="/api",
+    tags=["Scripts"]
 )
 
 
-class QuestionRequest(BaseModel):
-    question: str
+class ScriptRequest(BaseModel):
+    content_type: str
+    topic: str
+    target_audience: str = "General Audience"
+    language: str = "English"
+    tone: str = "Conversational"
+    duration: str = "5-7 minutes"
+    keywords: str = ""
+    additional_instructions: str = ""
 
 
-# PDF Upload API
-@router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+class RefineRequest(BaseModel):
+    script: str
+    action: str
+    target_tone: str | None = None
+    custom_instruction: str | None = None
 
-    if not file.filename.lower().endswith(".pdf"):
+
+@router.post("/generate-script")
+async def generate_script(request: ScriptRequest):
+
+    if not request.topic.strip():
         raise HTTPException(
             status_code=400,
-            detail="Please upload a PDF file"
+            detail="Please enter a topic."
         )
 
-    content = await file.read()
+    prompt = f"""
+    Create a complete and engaging {request.content_type} script.
 
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded PDF is empty"
-        )
+    Topic: {request.topic}
+    Target Audience: {request.target_audience}
+    Language: {request.language}
+    Tone: {request.tone}
+    Duration: {request.duration}
+    Keywords: {request.keywords}
+    Additional Instructions: {request.additional_instructions}
 
-    temp_path = None
+    Include:
+    1. An attractive title
+    2. An engaging introduction and hook
+    3. Main content with clear sections
+    4. Practical examples where appropriate
+    5. A conclusion
+    6. A call to action
+
+    Write the complete script in the requested language.
+    """
 
     try:
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".pdf"
-        ) as temp:
-            temp.write(content)
-            temp_path = temp.name
-
-        chunks = store_document(temp_path)
+        result = await gemini_service.generate_text(prompt)
 
         return {
-            "message": "PDF uploaded successfully",
-            "filename": file.filename,
-            "chunks_stored": chunks
+            "success": True,
+            "script": result,
+            "title": request.topic
         }
 
-    except ValueError as e:
+    except HTTPException:
+        raise
+
+    except Exception as e:
         raise HTTPException(
-            status_code=400,
+            status_code=500,
             detail=str(e)
         )
 
-    finally:
-        if temp_path:
-            Path(temp_path).unlink(missing_ok=True)
 
+@router.post("/refine-script")
+async def refine_script(request: RefineRequest):
 
-# RAG Question API with Gemini
-@router.post("/ask")
-async def ask_question(request: QuestionRequest):
-
-    if not request.question.strip():
+    if not request.script.strip():
         raise HTTPException(
             status_code=400,
-            detail="Question cannot be empty"
+            detail="Script cannot be empty."
         )
 
-    documents = retrieve_relevant_documents(
-        request.question
-    )
+    instructions = {
+        "improve_hook": "Make the hook and introduction more engaging.",
+        "make_shorter": "Make the script shorter and remove unnecessary content.",
+        "make_longer": "Expand the script with deeper talking points.",
+        "add_examples": "Add practical real-world examples.",
+        "simplify": "Simplify difficult words and technical explanations for beginners.",
+        "change_tone": f"Change the overall tone to {request.target_tone}."
+    }
 
-    if not documents:
-        raise HTTPException(
-            status_code=404,
-            detail="No documents found. Please upload a PDF first."
-        )
+    if request.action == "custom":
+        instruction = request.custom_instruction or ""
+        if not instruction.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Please enter a custom instruction."
+            )
+    else:
+        instruction = instructions.get(request.action)
 
-    context = "\n\n".join(documents)
+        if not instruction:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid refinement action."
+            )
 
     prompt = f"""
-    You are a helpful assistant for a Podcast and YouTube Script Planner.
+    Improve the following script based on the instruction.
 
-    Answer the user's question using only the context provided below.
+    Existing Script:
+    {request.script}
 
-    If the answer is not available in the context, clearly say
-    that the uploaded document does not contain that information.
+    Refinement Instruction:
+    {instruction}
 
-    Context:
-    {context}
-
-    User Question:
-    {request.question}
-
-    Provide a clear and simple answer.
+    Return the complete improved script only.
     """
 
-    answer = await gemini_service.generate_text(prompt)
+    try:
+        result = await gemini_service.generate_text(prompt)
 
-    return {
-        "question": request.question,
-        "answer": answer,
-        "retrieved_context": documents
-    }
+        return {
+            "success": True,
+            "refined_script": result
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )

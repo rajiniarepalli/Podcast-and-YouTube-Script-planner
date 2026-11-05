@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 
 export default function DocumentPage() {
@@ -9,7 +10,10 @@ export default function DocumentPage() {
   const [asking, setAsking] = useState(false);
   const [message, setMessage] = useState('');
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+  // Render Backend URL
+  const API_URL =
+    import.meta.env.VITE_API_URL ||
+    'https://podcast-script-planner.onrender.com';
 
   // Upload PDF
   const handleUpload = async () => {
@@ -23,31 +27,38 @@ export default function DocumentPage() {
 
     try {
       setUploading(true);
+      setUploaded(false);
       setMessage('');
       setAnswer('');
 
-      const response = await fetch(`${API_URL}/api/documents/upload`, {
-        method: 'POST',
-        body: formData
-      });
+      const response = await fetch(
+        `${API_URL}/api/documents/upload`,
+        {
+          method: 'POST',
+          body: formData
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || 'PDF upload failed');
+        throw new Error(data.detail || 'PDF upload failed.');
       }
 
       setUploaded(true);
-      setMessage('PDF uploaded successfully! You can now ask questions.');
+      setMessage(
+        'PDF uploaded successfully! You can now ask questions.'
+      );
+
     } catch (error) {
-      setMessage(error.message);
       setUploaded(false);
+      setMessage(error.message || 'Unable to upload PDF.');
     } finally {
       setUploading(false);
     }
   };
 
-  // Ask question about PDF
+  // Ask Gemini about uploaded PDF
   const handleAsk = async () => {
     if (!question.trim()) {
       setMessage('Please enter a question.');
@@ -64,23 +75,29 @@ export default function DocumentPage() {
       setMessage('');
       setAnswer('');
 
-      const response = await fetch(`${API_URL}/api/documents/ask`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ question })
-      });
+      const response = await fetch(
+        `${API_URL}/api/documents/ask`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            question: question.trim()
+          })
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Unable to get answer');
+        throw new Error(data.detail || 'Unable to get answer.');
       }
 
-      setAnswer(data.answer);
+      setAnswer(data.answer || 'No answer received from Gemini.');
+
     } catch (error) {
-      setMessage(error.message);
+      setMessage(error.message || 'Something went wrong.');
     } finally {
       setAsking(false);
     }
@@ -93,10 +110,10 @@ export default function DocumentPage() {
         padding: '30px 20px',
         maxWidth: '1100px',
         margin: '0 auto',
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        fontFamily:
+          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
       }}
     >
-      {/* Main Heading - Bold and White */}
       <h1
         style={{
           color: '#ffffff',
@@ -109,7 +126,6 @@ export default function DocumentPage() {
         PDF Knowledge Base
       </h1>
 
-      {/* Subtitle / Description - Bold and Readable */}
       <p
         style={{
           color: '#cbd5e1',
@@ -119,11 +135,10 @@ export default function DocumentPage() {
           marginBottom: '28px'
         }}
       >
-        Upload your PDF and ask questions. Gemini AI will answer using information
-        retrieved from your document.
+        Upload your PDF and ask questions. Gemini AI will answer
+        using information retrieved from your document.
       </p>
 
-      {/* White Content Card */}
       <div
         style={{
           background: '#ffffff',
@@ -133,14 +148,12 @@ export default function DocumentPage() {
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
         }}
       >
-        {/* Upload Heading */}
         <h2
           style={{
             color: '#0f172a',
             fontWeight: 800,
             fontSize: '22px',
-            marginBottom: '14px',
-            letterSpacing: '-0.3px'
+            marginBottom: '14px'
           }}
         >
           Upload PDF
@@ -165,26 +178,35 @@ export default function DocumentPage() {
 
         <button
           onClick={handleUpload}
-          disabled={uploading}
+          disabled={uploading || !file}
           style={{
-            padding: '8px 18px',
+            padding: '10px 20px',
             fontWeight: 600,
             borderRadius: '6px',
-            cursor: uploading ? 'not-allowed' : 'pointer'
+            cursor: uploading || !file ? 'not-allowed' : 'pointer',
+            background: '#2563eb',
+            color: '#ffffff',
+            border: 'none',
+            opacity: uploading || !file ? 0.6 : 1
           }}
         >
           {uploading ? 'Uploading...' : 'Upload PDF'}
         </button>
 
-        <hr style={{ margin: '28px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
+        <hr
+          style={{
+            margin: '28px 0',
+            border: 'none',
+            borderTop: '1px solid #e2e8f0'
+          }}
+        />
 
         <h2
           style={{
             color: '#0f172a',
             fontWeight: 800,
             fontSize: '22px',
-            marginBottom: '14px',
-            letterSpacing: '-0.3px'
+            marginBottom: '14px'
           }}
         >
           Ask Questions
@@ -208,16 +230,27 @@ export default function DocumentPage() {
           }}
         />
 
-        <br /><br />
+        <br />
+        <br />
 
         <button
           onClick={handleAsk}
-          disabled={asking || !uploaded}
+          disabled={asking || uploading || !uploaded || !question.trim()}
           style={{
-            padding: '8px 18px',
+            padding: '10px 20px',
             fontWeight: 600,
             borderRadius: '6px',
-            cursor: asking || !uploaded ? 'not-allowed' : 'pointer'
+            cursor:
+              asking || uploading || !uploaded || !question.trim()
+                ? 'not-allowed'
+                : 'pointer',
+            background: '#16a34a',
+            color: '#ffffff',
+            border: 'none',
+            opacity:
+              asking || uploading || !uploaded || !question.trim()
+                ? 0.6
+                : 1
           }}
         >
           {asking ? 'Generating Answer...' : 'Ask Gemini'}
@@ -246,7 +279,13 @@ export default function DocumentPage() {
               color: '#0f172a'
             }}
           >
-            <h3 style={{ color: '#0f172a', fontWeight: 700, marginBottom: '8px' }}>
+            <h3
+              style={{
+                color: '#0f172a',
+                fontWeight: 700,
+                marginBottom: '8px'
+              }}
+            >
               AI Generated Answer
             </h3>
 
@@ -256,7 +295,7 @@ export default function DocumentPage() {
                 color: '#334155',
                 fontSize: '15px',
                 lineHeight: '1.7',
-                fontWeight: '500',
+                fontWeight: 500,
                 margin: 0
               }}
             >
