@@ -7,7 +7,10 @@ from app.config import settings
 
 
 class GeminiService:
+
     def __init__(self):
+        self.model_name = settings.GEMINI_MODEL
+
         if (
             not settings.GEMINI_API_KEY
             or settings.GEMINI_API_KEY == "your_actual_gemini_api_key_here"
@@ -18,7 +21,15 @@ class GeminiService:
                 api_key=settings.GEMINI_API_KEY
             )
 
-        self.model_name = settings.GEMINI_MODEL
+        print(
+            "Gemini Service Initialized",
+            flush=True
+        )
+        print(
+            "Configured Gemini Model:",
+            self.model_name,
+            flush=True
+        )
 
     def _ensure_client(self):
         if not self.client:
@@ -28,78 +39,87 @@ class GeminiService:
             )
 
     async def generate_text(self, prompt: str) -> str:
+
         self._ensure_client()
 
-        models_to_try = list(dict.fromkeys([
+        print(
+            "Using Gemini model:",
             self.model_name,
-            "gemini-3.7-flash",
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite"
-        ]))
-
-        last_error_msg = ""
-
-        for model in models_to_try:
-            for attempt in range(2):
-                try:
-                    response = await asyncio.to_thread(
-                        self.client.models.generate_content,
-                        model=model,
-                        contents=prompt
-                    )
-
-                    if response and response.text:
-                        return response.text
-
-                    last_error_msg = f"No response received from {model}"
-
-                except errors.APIError as e:
-                    last_error_msg = str(e)
-                    error_msg = last_error_msg.upper()
-
-                    if (
-                        "503" in error_msg
-                        or "UNAVAILABLE" in error_msg
-                        or "429" in error_msg
-                        or "RESOURCE_EXHAUSTED" in error_msg
-                    ):
-                        # Retry once after a short delay
-                        if attempt == 0:
-                            await asyncio.sleep(2)
-                            continue
-
-                        # Try the next model
-                        break
-
-                    if (
-                        "INVALID_ARGUMENT" in error_msg
-                        or "API_KEY_INVALID" in error_msg
-                    ):
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Invalid Gemini API key."
-                        )
-
-                    if "404" in error_msg or "NOT_FOUND" in error_msg:
-                        break
-
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail=f"Gemini API error: {last_error_msg}"
-                    )
-
-                except Exception as e:
-                    last_error_msg = str(e)
-                    break
-
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "All Gemini models are temporarily unavailable. "
-                "Please try again later. "
-                f"Last error: {last_error_msg}"
-            )
+            flush=True
         )
+
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model_name,
+                contents=prompt
+            )
+
+            if response and response.text:
+                print(
+                    "Gemini generation successful.",
+                    flush=True
+                )
+                return response.text
+
+            raise HTTPException(
+                status_code=502,
+                detail="Gemini returned an empty response."
+            )
+
+        except errors.APIError as e:
+
+            error_msg = str(e)
+
+            print(
+                "ACTUAL GEMINI ERROR:",
+                error_msg,
+                flush=True
+            )
+
+            upper_error = error_msg.upper()
+
+            if "429" in upper_error or "RESOURCE_EXHAUSTED" in upper_error:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Gemini quota exceeded or rate limited: {error_msg}"
+                )
+
+            if "503" in upper_error or "UNAVAILABLE" in upper_error:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Gemini service temporarily unavailable: {error_msg}"
+                )
+
+            if (
+                "INVALID_ARGUMENT" in upper_error
+                or "API_KEY_INVALID" in upper_error
+            ):
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Gemini authentication/configuration error: {error_msg}"
+                )
+
+            raise HTTPException(
+                status_code=502,
+                detail=f"Gemini API error: {error_msg}"
+            )
+
+        except HTTPException:
+            raise
+
+        except Exception as e:
+
+            print(
+                "UNEXPECTED GEMINI ERROR:",
+                str(e),
+                flush=True
+            )
+
+            raise HTTPException(
+                status_code=500,
+                detail=f"Unexpected error: {str(e)}"
+            )
 
 
 gemini_service = GeminiService()
