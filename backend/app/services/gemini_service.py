@@ -14,7 +14,6 @@ class GeminiService:
     def __init__(self):
         self.model_name = settings.GEMINI_MODEL
 
-        # Configure backup model through environment variable
         self.fallback_model = os.getenv(
             "GEMINI_FALLBACK_MODEL", ""
         ).strip()
@@ -31,11 +30,7 @@ class GeminiService:
 
         print("Gemini Service Initialized", flush=True)
         print("Primary Model:", self.model_name, flush=True)
-        print(
-            "Backup Model:",
-            self.fallback_model or "Not configured",
-            flush=True
-        )
+        print("Backup Model:", self.fallback_model or "Not configured", flush=True)
 
     def _ensure_client(self):
         if not self.client:
@@ -57,110 +52,117 @@ class GeminiService:
 
         models = [self.model_name]
 
-        if (
-            self.fallback_model
-            and self.fallback_model != self.model_name
-        ):
+        if self.fallback_model and self.fallback_model != self.model_name:
             models.append(self.fallback_model)
 
         errors_found = []
 
-        for index, model in enumerate(models):
+        for model in models:
 
             print("Trying Gemini model:", model, flush=True)
 
-            try:
-                response = await self._generate_with_model(
-                    model, prompt
-                )
+            # Maximum 3 attempts for each model
+            for attempt in range(1, 4):
 
-                if response and response.text:
+                try:
                     print(
-                        "Gemini generation successful using:",
+                        f"Attempt {attempt}/3 for {model}",
+                        flush=True
+                    )
+
+                    response = await self._generate_with_model(
+                        model, prompt
+                    )
+
+                    if response and response.text:
+                        print(
+                            "Gemini generation successful using:",
+                            model,
+                            flush=True
+                        )
+                        return response.text
+
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Empty response from {model}."
+                    )
+
+                except errors.APIError as e:
+
+                    error_msg = str(e)
+                    upper_error = error_msg.upper()
+
+                    print(
+                        "GEMINI API ERROR:",
                         model,
+                        error_msg,
                         flush=True
                     )
-                    return response.text
 
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Gemini returned an empty response from {model}."
-                )
+                    retryable = (
+                        "503" in upper_error
+                        or "UNAVAILABLE" in upper_error
+                        or "429" in upper_error
+                        or "RESOURCE_EXHAUSTED" in upper_error
+                    )
 
-            except errors.APIError as e:
+                    if retryable:
+                        errors_found.append(
+                            f"{model}: {error_msg}"
+                        )
 
-                error_msg = str(e)
-                print(
-                    "GEMINI API ERROR:",
-                    model,
-                    error_msg,
-                    flush=True
-                )
+                        if attempt < 3:
+                            wait_time = 2 ** attempt
 
-                errors_found.append(
-                    f"{model}: {error_msg}"
-                )
+                            print(
+                                f"Retrying {model} after {wait_time} seconds",
+                                flush=True
+                            )
 
-                upper_error = error_msg.upper()
+                            await asyncio.sleep(wait_time)
+                            continue
 
-                retryable = (
-                    "429" in upper_error
-                    or "RESOURCE_EXHAUSTED" in upper_error
-                    or "503" in upper_error
-                    or "UNAVAILABLE" in upper_error
-                )
+                        print(
+                            f"All attempts failed for {model}",
+                            flush=True
+                        )
+                        break
 
-                if retryable and index < len(models) - 1:
+                    if (
+                        "INVALID_ARGUMENT" in upper_error
+                        or "API_KEY_INVALID" in upper_error
+                    ):
+                        raise HTTPException(
+                            status_code=401,
+                            detail=f"Gemini configuration error: {error_msg}"
+                        )
+
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Gemini API error: {error_msg}"
+                    )
+
+                except HTTPException:
+                    raise
+
+                except Exception as e:
                     print(
-                        "Primary model failed. Trying backup model.",
+                        "UNEXPECTED GEMINI ERROR:",
+                        str(e),
                         flush=True
                     )
-                    continue
-
-                if "429" in upper_error or "RESOURCE_EXHAUSTED" in upper_error:
                     raise HTTPException(
-                        status_code=429,
-                        detail=f"Gemini quota/rate limit error: {error_msg}"
+                        status_code=500,
+                        detail=f"Unexpected error: {str(e)}"
                     )
-
-                if "503" in upper_error or "UNAVAILABLE" in upper_error:
-                    raise HTTPException(
-                        status_code=503,
-                        detail=f"Gemini temporarily unavailable: {error_msg}"
-                    )
-
-                if (
-                    "INVALID_ARGUMENT" in upper_error
-                    or "API_KEY_INVALID" in upper_error
-                ):
-                    raise HTTPException(
-                        status_code=401,
-                        detail=f"Gemini configuration error: {error_msg}"
-                    )
-
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Gemini API error: {error_msg}"
-                )
-
-            except HTTPException:
-                raise
-
-            except Exception as e:
-                print(
-                    "UNEXPECTED GEMINI ERROR:",
-                    str(e),
-                    flush=True
-                )
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Unexpected error: {str(e)}"
-                )
 
         raise HTTPException(
             status_code=503,
-            detail="All configured Gemini models are unavailable. "
-                   + " | ".join(errors_found)
+            detail=(
+                "Gemini is temporarily unavailable. "
+                "Both models failed after retry attempts. "
+                "Please try again later."
+            )
         )
 
 
