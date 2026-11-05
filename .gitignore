@@ -21,3 +21,4 @@ backend/chroma_db/
 chroma_db/
 .vercel
 .env*
+dist/
