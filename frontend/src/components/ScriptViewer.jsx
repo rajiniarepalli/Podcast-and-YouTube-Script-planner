@@ -3,7 +3,11 @@ import React, { useState } from 'react';
 import TeleprompterModal from './TeleprompterModal';
 import { jsPDF } from 'jspdf';
 
-export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript }) {
+export default function ScriptViewer({
+  currentScript,
+  onOpenRefine,
+  onSaveScript
+}) {
   const [copied, setCopied] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isPrompterOpen, setIsPrompterOpen] = useState(false);
@@ -14,8 +18,8 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
         <div className="empty-icon">📝</div>
         <h3>No Script Generated Yet</h3>
         <p style={{ marginTop: '0.5rem' }}>
-          Fill in the content brief on the left and click Generate to produce a structured,
-          teleprompter-ready script.
+          Fill in the content brief on the left and click Generate to produce
+          a structured, teleprompter-ready script.
         </p>
       </div>
     );
@@ -28,6 +32,8 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
   const charCount = scriptText.length;
   const estimatedMins = Math.max(1, Math.round(wordCount / 140));
 
+  const safeFilename = scriptTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(scriptText);
@@ -39,13 +45,20 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
   };
 
   const handleDownloadTxt = () => {
-    const filename = `${scriptTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.txt`;
-    const blob = new Blob([scriptText], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+    if (!scriptText.trim()) {
+      alert('No script available to download.');
+      return;
+    }
 
+    const blob = new Blob([scriptText], {
+      type: 'text/plain;charset=utf-8'
+    });
+
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
+
     link.href = url;
-    link.download = filename;
+    link.download = `${safeFilename}.txt`;
 
     document.body.appendChild(link);
     link.click();
@@ -55,6 +68,8 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
   };
 
   const handleDownloadPdf = () => {
+    alert('PDF button clicked!');
+
     try {
       if (!scriptText.trim()) {
         alert('No script available to download.');
@@ -64,30 +79,37 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: 'a4',
+        format: 'a4'
       });
 
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
+
       const margin = 15;
       const maxLineWidth = pageWidth - margin * 2;
 
-      // Title
+      let cursorY = 20;
+
+      // PDF title
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(16);
 
-      const titleLines = doc.splitTextToSize(scriptTitle, maxLineWidth);
-      let cursorY = 20;
+      const titleLines = doc.splitTextToSize(
+        scriptTitle,
+        maxLineWidth
+      );
 
       doc.text(titleLines, margin, cursorY);
       cursorY += titleLines.length * 8;
 
-      // Script information
+      // Script details
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(100);
 
-      const contentType = (currentScript.content_type || 'Script').toUpperCase();
+      const contentType = (
+        currentScript.content_type || 'Script'
+      ).toUpperCase();
 
       doc.text(
         `Format: ${contentType} | Estimated Time: ${estimatedMins} min | Words: ${wordCount}`,
@@ -97,18 +119,28 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
 
       cursorY += 8;
 
+      // Divider
       doc.setDrawColor(180);
       doc.setLineWidth(0.5);
-      doc.line(margin, cursorY, pageWidth - margin, cursorY);
+      doc.line(
+        margin,
+        cursorY,
+        pageWidth - margin,
+        cursorY
+      );
 
       cursorY += 8;
 
-      // Script body
+      // PDF script content
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(11);
       doc.setTextColor(20);
 
-      const lines = doc.splitTextToSize(scriptText, maxLineWidth);
+      const lines = doc.splitTextToSize(
+        scriptText,
+        maxLineWidth
+      );
+
       const lineHeight = 6;
 
       for (let i = 0; i < lines.length; i++) {
@@ -121,13 +153,12 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
         cursorY += lineHeight;
       }
 
-      const filename = `${scriptTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
-
-      doc.save(filename);
+      // Download PDF
+      doc.save(`${safeFilename}.pdf`);
 
     } catch (error) {
       console.error('PDF download error:', error);
-      alert('PDF download failed. Please try again.');
+      alert(`PDF download failed: ${error.message}`);
     }
   };
 
@@ -152,13 +183,20 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
               {currentScript.content_type || 'Script'}
             </span>
 
-            <h2 style={{ fontSize: '1.25rem', marginTop: '0.35rem', fontWeight: 700 }}>
+            <h2
+              style={{
+                fontSize: '1.25rem',
+                marginTop: '0.35rem',
+                fontWeight: 700
+              }}
+            >
               {scriptTitle}
             </h2>
           </div>
 
           <div className="action-bar">
             <button
+              type="button"
               className="btn-secondary"
               onClick={() => setIsPrompterOpen(true)}
               title="Open full-screen teleprompter"
@@ -166,23 +204,40 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
               📺 Teleprompter
             </button>
 
-            <button className="btn-secondary" onClick={handleCopy}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleCopy}
+            >
               {copied ? '✓ Copied!' : '📋 Copy'}
             </button>
 
-            <button className="btn-secondary" onClick={handleDownloadPdf}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleDownloadPdf}
+            >
               📄 Download PDF
             </button>
 
-            <button className="btn-secondary" onClick={handleDownloadTxt}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleDownloadTxt}
+            >
               💾 .txt
             </button>
 
-            <button className="btn-secondary" onClick={handleSave}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleSave}
+            >
               {savedSuccess ? '✓ Saved!' : '⭐ Save'}
             </button>
 
             <button
+              type="button"
               className="btn-primary"
               onClick={onOpenRefine}
               style={{ padding: '0.5rem 1rem' }}
@@ -194,23 +249,29 @@ export default function ScriptViewer({ currentScript, onOpenRefine, onSaveScript
 
         <div className="metrics-bar">
           <div className="metric-pill">
-            <span>Words:</span> <strong>{wordCount}</strong>
+            <span>Words:</span>
+            <strong>{wordCount}</strong>
           </div>
 
           <div className="metric-pill">
-            <span>Est. Time:</span> <strong>~{estimatedMins} min</strong>
+            <span>Est. Time:</span>
+            <strong>~{estimatedMins} min</strong>
           </div>
 
           <div className="metric-pill">
-            <span>Chars:</span> <strong>{charCount}</strong>
+            <span>Chars:</span>
+            <strong>{charCount}</strong>
           </div>
 
           <div className="metric-pill">
-            <span>Engine:</span> <strong>{currentScript.model_used || 'Gemini'}</strong>
+            <span>Engine:</span>
+            <strong>{currentScript.model_used || 'Gemini'}</strong>
           </div>
         </div>
 
-        <div className="script-content">{scriptText}</div>
+        <div className="script-content">
+          {scriptText}
+        </div>
       </div>
 
       <TeleprompterModal
